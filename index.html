@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>颜色方案验证工具</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js"></script>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="page-shell app-root" data-theme="light">
+    <section class="coolors-panel" id="coolorsHero" aria-label="Coolors style color interaction">
+      <div class="coolors-copy" id="coolorsText"></div>
+    </section>
+
+  <div class="app">
+    <aside class="stack">
+      <div class="intro">
+        <p class="eyebrow">Color validation</p>
+        <h1>颜色方案<span>验证</span></h1>
+        <p class="muted small">输入一组色值，保存为命名色板，并用 OKLCH 分布、两两距离和图表示例检查分类色是否容易区分。</p>
+      </div>
+
+      <label>
+        已保存色板
+        <select id="paletteSelect"></select>
+      </label>
+
+      <label>
+        色板名称
+        <input id="paletteName" placeholder="例如：实验默认颜色">
+      </label>
+
+      <label>
+        色值列表
+        <textarea id="colorInput" spellcheck="false" placeholder="#3b82f6
+#22c55e
+#f59e0b"></textarea>
+      </label>
+
+      <div id="inputError" class="invalid small"></div>
+
+      <div class="toolbar">
+        <button class="primary" id="saveBtn">保存/更新</button>
+        <button id="newBtn">新建</button>
+        <button class="danger" id="deleteBtn">删除</button>
+      </div>
+
+      <div class="controls">
+        <div class="split">
+          <label>
+            主题
+            <select id="themeSelect">
+              <option value="light" selected>Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+          <label>
+            分析数量
+            <input id="firstN" type="number" min="1" max="80" value="14">
+          </label>
+        </div>
+
+        <div class="split">
+          <label>
+            Donut 内半径
+            <span class="range-row"><input id="donutInner" type="range" min="0" max="0.8" step="0.01" value="0.3"><output id="donutInnerVal">0.3</output></span>
+          </label>
+          <label>
+            Donut 外半径
+            <span class="range-row"><input id="donutOuter" type="range" min="0.35" max="1" step="0.01" value="0.8"><output id="donutOuterVal">0.8</output></span>
+          </label>
+        </div>
+
+        <div class="split">
+          <label>
+            柱图外层数量
+            <input id="barOuter" type="number" min="1" max="40" value="14">
+          </label>
+          <label>
+            折线宽度
+            <span class="range-row"><input id="lineWidth" type="range" min="0.5" max="4" step="0.1" value="2"><output id="lineWidthVal">2</output></span>
+          </label>
+        </div>
+
+        <div class="split">
+          <label>
+            散点 X 轴
+            <select id="xField">
+              <option value="chroma">Chroma</option>
+              <option value="lightness">Lightness</option>
+              <option value="hue">Hue</option>
+            </select>
+          </label>
+          <label>
+            散点 Y 轴
+            <select id="yField">
+              <option value="lightness">Lightness</option>
+              <option value="chroma">Chroma</option>
+              <option value="hue">Hue</option>
+            </select>
+          </label>
+        </div>
+
+        <label>
+          雷达半径字段
+          <select id="rField">
+            <option value="lightness">Lightness</option>
+            <option value="chroma">Chroma</option>
+          </select>
+        </label>
+
+        <label>
+          Lightness 权重
+          <span class="range-row"><input id="weightL" type="range" min="0" max="10" step="0.01" value="1"><output id="weightLVal">1</output></span>
+        </label>
+        <label>
+          Chroma 权重
+          <span class="range-row"><input id="weightC" type="range" min="0" max="10" step="0.01" value="1"><output id="weightCVal">1</output></span>
+        </label>
+        <label>
+          Hue 权重
+          <span class="range-row"><input id="weightH" type="range" min="0" max="10" step="0.01" value="1"><output id="weightHVal">1</output></span>
+        </label>
+        <div class="control-note">
+          权重用于计算颜色距离：Lightness 控制明度差异的重要性，Chroma 控制彩度差异，Hue 控制色相差异。某项权重越高，该维度的差异会让距离值变大；权重越低，该维度越不影响红/黄风险判断。
+        </div>
+      </div>
+    </aside>
+
+    <main>
+      <section class="panel hero-panel">
+        <div class="panel-header">
+          <div>
+            <h2 id="activeTitle">当前色板</h2>
+            <p class="muted small" id="activeSubtitle"></p>
+          </div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><span class="muted small">颜色数量</span><b id="metricCount">0</b></div>
+          <div class="metric"><span class="muted small">最小距离</span><b id="metricMin">-</b></div>
+          <div class="metric"><span class="muted small">风险组合</span><b id="metricRisk">0</b></div>
+          <div class="metric"><span class="muted small">平均距离</span><b id="metricAvg">-</b></div>
+        </div>
+      </section>
+
+      <section class="section-band soft">
+        <div class="principles">
+          <div>
+            <p class="eyebrow">Why it works</p>
+            <h2>先让颜色在感知空间里分开，再让它们在真实图表里好用。</h2>
+            <p class="muted small">参考 <a href="https://www.tableau.com/blog/colors-upgrade-tableau-10-56782" target="_blank" rel="noreferrer">Tableau 10 调色板升级</a> 中提到的思路：分类色不仅要“好看”，还要在不同图表、背景、相邻关系和色觉条件下保持可区分。</p>
+          </div>
+          <div class="principle-list">
+            <div class="principle-item">
+              <span class="principle-dot" style="background:#007aff">1</span>
+              <div><h3>感知均匀</h3><p class="muted small">OKLCH 用 Lightness、Chroma、Hue 拆开观察颜色。比单看 HEX 更容易判断明度是否过挤、彩度是否过强、色相是否撞车。</p></div>
+            </div>
+            <div class="principle-item">
+              <span class="principle-dot" style="background:#57d246">2</span>
+              <div><h3>分类区分</h3><p class="muted small">分类调色板要优先保证相邻颜色可识别。两两距离矩阵会把距离过近的组合标黄/标红，帮助提前发现混淆风险。</p></div>
+            </div>
+            <div class="principle-item">
+              <span class="principle-dot" style="background:#ff9a2f">3</span>
+              <div><h3>图表验证</h3><p class="muted small">同一套色值在饼图、柱图、折线和堆叠图中的表现不同，所以需要结合示例图，而不是只看色板本身。</p></div>
+            </div>
+            <div class="principle-item">
+              <span class="principle-dot" style="background:#ff8fc5">4</span>
+              <div><h3>边界控制</h3><p class="muted small">散点图里的参考范围用于检查颜色是否集中在合理明度和彩度区间，避免过浅、过暗或过灰导致可读性下降。</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>色板</h2>
+            <p class="muted small">编号会同步用于图表和距离矩阵。</p>
+          </div>
+        </div>
+        <div class="swatches" id="swatches"></div>
+      </section>
+
+      <section class="section-band">
+        <div class="plots-wide">
+        <div>
+          <div class="panel-header"><h2>OKLCH 散点</h2></div>
+          <div class="chart-box tall" id="scatterChart"></div>
+        </div>
+        <div>
+          <div class="panel-header"><h2>Hue 雷达</h2></div>
+          <div class="chart-box tall" id="radarChart"></div>
+        </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>颜色距离</h2>
+            <p class="muted small">距离小于等于 0.085 标红，0.125 以内标黄；权重与原页面一致可调。</p>
+          </div>
+        </div>
+        <div class="matrix-wrap" id="distanceMatrix"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>图表示例</h2>
+            <p class="muted small">用同一套分类色模拟 donut、分组柱、折线、堆叠柱的可读性。</p>
+          </div>
+        </div>
+        <div class="charts-grid">
+          <div class="chart-box" id="donutChart"></div>
+          <div class="chart-box" id="barChart"></div>
+          <div class="chart-box" id="lineChart"></div>
+          <div class="chart-box" id="stackChart"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
